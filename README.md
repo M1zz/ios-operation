@@ -6,7 +6,7 @@
 
 ## 🌐 라이브 데모
 
-**[→ GitHub Pages에서 바로 보기](https://[your-username].github.io/stage8-ios-roadmap/)**
+**[→ GitHub Pages에서 바로 보기](https://m1zz.github.io/ios-operation/)**
 
 ## 📚 커리큘럼
 
@@ -28,8 +28,8 @@
 별도 빌드 없이 바로 열 수 있습니다.
 
 ```bash
-git clone https://github.com/[your-username]/stage8-ios-roadmap.git
-cd stage8-ios-roadmap
+git clone https://github.com/M1zz/ios-operation.git
+cd ios-operation
 open index.html
 ```
 
