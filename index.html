@@ -1,0 +1,1518 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STAGE 8 · 엔진을 이해하는 드라이버</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&family=Bebas+Neue&family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --black: #050508;
+    --deep: #0c0c14;
+    --surface: #111120;
+    --border: #1e1e35;
+    --amber: #f59e0b;
+    --amber-dim: #b4720a;
+    --cyan: #00d4ff;
+    --cyan-dim: #007a99;
+    --green: #00ff88;
+    --purple: #7c3aed;
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --faint: #1a1a2e;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--black);
+    color: var(--text);
+    font-family: 'Noto Sans KR', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Circuit background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
+    background-size: 60px 60px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  body::after {
+    content: '';
+    position: fixed;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(ellipse at 20% 20%, rgba(124,58,237,0.06) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 80%, rgba(0,212,255,0.05) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 50%, rgba(245,158,11,0.03) 0%, transparent 60%);
+    pointer-events: none;
+    z-index: 0;
+    animation: ambientShift 20s ease-in-out infinite alternate;
+  }
+
+  @keyframes ambientShift {
+    0% { transform: translate(0, 0) rotate(0deg); }
+    100% { transform: translate(-3%, -3%) rotate(1deg); }
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 0 24px 80px;
+  }
+
+  /* HERO */
+  .hero {
+    padding: 64px 0 48px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 56px;
+  }
+
+  .stage-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(245,158,11,0.08);
+    border: 1px solid rgba(245,158,11,0.25);
+    padding: 6px 16px;
+    border-radius: 2px;
+    margin-bottom: 28px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 3px;
+    color: var(--amber);
+    text-transform: uppercase;
+    animation: fadeSlideDown 0.6s ease both;
+  }
+
+  .stage-badge::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    background: var(--amber);
+    border-radius: 50%;
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.8); }
+  }
+
+  .hero-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(52px, 8vw, 96px);
+    line-height: 0.9;
+    letter-spacing: 2px;
+    margin-bottom: 16px;
+    animation: fadeSlideDown 0.6s ease 0.1s both;
+  }
+
+  .hero-title .word-engine {
+    display: block;
+    color: var(--cyan);
+    text-shadow: 0 0 40px rgba(0,212,255,0.3);
+  }
+
+  .hero-title .word-driver {
+    display: block;
+    color: var(--text);
+    opacity: 0.9;
+  }
+
+  .hero-tagline {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    color: var(--muted);
+    margin-bottom: 40px;
+    animation: fadeSlideDown 0.6s ease 0.2s both;
+  }
+
+  .hero-tagline span { color: var(--amber); }
+
+  .stage-trail {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    animation: fadeSlideDown 0.6s ease 0.3s both;
+  }
+
+  .trail-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--muted);
+    padding: 4px 8px;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    transition: all 0.2s;
+  }
+
+  .trail-item.current {
+    background: rgba(0,212,255,0.08);
+    border-color: rgba(0,212,255,0.3);
+    color: var(--cyan);
+  }
+
+  /* PROBLEM BLOCK */
+  .problem-block {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--amber);
+    padding: 28px 32px;
+    margin-bottom: 56px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+    animation: fadeSlideDown 0.6s ease 0.4s both;
+  }
+
+  .problem-section h3 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 12px;
+  }
+
+  .problem-section p {
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--text);
+    opacity: 0.85;
+  }
+
+  .problem-section.pain p { color: #fca5a5; }
+  .problem-section.gain p { color: #86efac; }
+
+  /* OUTCOME BOX */
+  .outcome-box {
+    background: linear-gradient(135deg, rgba(0,212,255,0.05) 0%, rgba(124,58,237,0.05) 100%);
+    border: 1px solid rgba(0,212,255,0.15);
+    padding: 32px;
+    margin-bottom: 56px;
+    position: relative;
+    overflow: hidden;
+    animation: fadeSlideDown 0.6s ease 0.5s both;
+  }
+
+  .outcome-box::before {
+    content: '✅';
+    position: absolute;
+    right: -10px;
+    top: -10px;
+    font-size: 100px;
+    opacity: 0.05;
+  }
+
+  .outcome-box h3 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--cyan);
+    margin-bottom: 16px;
+  }
+
+  .outcome-box p {
+    font-size: 15px;
+    line-height: 1.8;
+    color: var(--text);
+    opacity: 0.9;
+  }
+
+  /* CHAPTERS */
+  .chapters-header {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .chapters-header::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .chapter {
+    margin-bottom: 24px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    overflow: hidden;
+    transition: border-color 0.3s;
+    animation: fadeSlideDown 0.6s ease both;
+  }
+
+  .chapter:nth-child(1) { animation-delay: 0.6s; }
+  .chapter:nth-child(2) { animation-delay: 0.7s; }
+  .chapter:nth-child(3) { animation-delay: 0.8s; }
+
+  .chapter.active { border-color: var(--cyan-dim); }
+  .chapter.active.ch2 { border-color: var(--amber-dim); }
+  .chapter.active.ch3 { border-color: rgba(124,58,237,0.5); }
+
+  .chapter-header {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 20px;
+    padding: 24px 28px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.2s;
+  }
+
+  .chapter-header:hover { background: rgba(255,255,255,0.02); }
+
+  .chapter-num {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 42px;
+    line-height: 1;
+    color: var(--border);
+    transition: color 0.3s;
+  }
+
+  .chapter.active .chapter-num { color: var(--cyan); }
+  .chapter.active.ch2 .chapter-num { color: var(--amber); }
+  .chapter.active.ch3 .chapter-num { color: var(--purple); }
+
+  .chapter-meta {}
+
+  .chapter-emoji {
+    font-size: 20px;
+    margin-bottom: 4px;
+  }
+
+  .chapter-title {
+    font-size: 17px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+
+  .chapter-subtitle {
+    font-size: 12px;
+    color: var(--muted);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .chapter-toggle {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 18px;
+    color: var(--muted);
+    transition: transform 0.3s, color 0.3s;
+  }
+
+  .chapter.active .chapter-toggle {
+    transform: rotate(180deg);
+    color: var(--cyan);
+  }
+
+  .chapter.active.ch2 .chapter-toggle { color: var(--amber); }
+  .chapter.active.ch3 .chapter-toggle { color: var(--purple); }
+
+  .chapter-why {
+    padding: 0 28px 20px 88px;
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 1.7;
+    display: none;
+    border-bottom: 1px solid var(--border);
+    background: rgba(0,0,0,0.2);
+  }
+
+  .chapter-why-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--amber);
+    margin-bottom: 8px;
+    display: block;
+    text-transform: uppercase;
+  }
+
+  .chapter-body {
+    display: none;
+    padding: 28px;
+  }
+
+  .chapter.active .chapter-why,
+  .chapter.active .chapter-body { display: block; }
+
+  /* TOPIC GROUPS */
+  .topic-group {
+    margin-bottom: 32px;
+  }
+
+  .topic-group:last-child { margin-bottom: 0; }
+
+  .topic-group-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--cyan);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .ch2 .topic-group-title { color: var(--amber); }
+  .ch3 .topic-group-title { color: #a78bfa; }
+
+  .topic-group-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: currentColor;
+    opacity: 0.2;
+  }
+
+  .topics {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .topic-card {
+    background: rgba(0,0,0,0.3);
+    border: 1px solid var(--border);
+    padding: 14px 18px;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .topic-card::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: var(--cyan);
+    transform: scaleY(0);
+    transition: transform 0.2s;
+  }
+
+  .ch2 .topic-card::before { background: var(--amber); }
+  .ch3 .topic-card::before { background: var(--purple); }
+
+  .topic-card:hover { border-color: rgba(0,212,255,0.3); background: rgba(0,212,255,0.03); }
+  .topic-card:hover::before { transform: scaleY(1); }
+  .ch2 .topic-card:hover { border-color: rgba(245,158,11,0.3); background: rgba(245,158,11,0.03); }
+  .ch3 .topic-card:hover { border-color: rgba(124,58,237,0.3); background: rgba(124,58,237,0.03); }
+
+  .topic-card.done { opacity: 0.5; }
+  .topic-card.done::before { transform: scaleY(1); opacity: 0.5; }
+
+  .topic-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .topic-check {
+    width: 18px;
+    height: 18px;
+    border: 1.5px solid var(--border);
+    border-radius: 2px;
+    flex-shrink: 0;
+    margin-top: 1px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    transition: all 0.2s;
+    cursor: pointer;
+  }
+
+  .topic-card.done .topic-check {
+    background: var(--cyan);
+    border-color: var(--cyan);
+    color: var(--black);
+  }
+
+  .ch2 .topic-card.done .topic-check { background: var(--amber); border-color: var(--amber); }
+  .ch3 .topic-card.done .topic-check { background: var(--purple); border-color: var(--purple); }
+
+  .topic-content { flex: 1; }
+
+  .topic-name {
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: 3px;
+  }
+
+  .topic-desc {
+    font-size: 12px;
+    color: var(--muted);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* DETAIL PANEL */
+  .topic-detail {
+    display: none;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+    font-size: 13px;
+    line-height: 1.8;
+    color: var(--text);
+    opacity: 0.8;
+  }
+
+  .topic-card.expanded .topic-detail { display: block; }
+
+  .topic-detail ul {
+    list-style: none;
+    padding: 0;
+  }
+
+  .topic-detail ul li {
+    padding: 3px 0;
+    padding-left: 16px;
+    position: relative;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+  }
+
+  .topic-detail ul li::before {
+    content: '→';
+    position: absolute;
+    left: 0;
+    color: var(--muted);
+    font-size: 10px;
+  }
+
+  /* PROGRESS */
+  .progress-bar-container {
+    margin-bottom: 56px;
+    animation: fadeSlideDown 0.6s ease 0.55s both;
+  }
+
+  .progress-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+
+  .progress-label span:first-child {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .progress-label .progress-count {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--cyan);
+  }
+
+  .progress-track {
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--cyan), var(--purple));
+    border-radius: 2px;
+    transition: width 0.5s ease;
+    width: 0%;
+  }
+
+  .chapter-progress {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-top: 16px;
+  }
+
+  .ch-prog {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 14px 16px;
+  }
+
+  .ch-prog-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+
+  .ch-prog-bar {
+    height: 3px;
+    background: var(--border);
+    border-radius: 1px;
+    overflow: hidden;
+    margin-bottom: 6px;
+  }
+
+  .ch-prog-fill {
+    height: 100%;
+    border-radius: 1px;
+    transition: width 0.5s ease;
+    width: 0%;
+  }
+
+  .ch1-fill { background: var(--cyan); }
+  .ch2-fill { background: var(--amber); }
+  .ch3-fill { background: var(--purple); }
+
+  .ch-prog-count {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text);
+  }
+
+  /* FOOTER */
+  .page-footer {
+    text-align: center;
+    padding-top: 40px;
+    border-top: 1px solid var(--border);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 1px;
+  }
+
+  .page-footer span { color: var(--amber); }
+
+  /* ANIMATIONS */
+  @keyframes fadeSlideDown {
+    from { opacity: 0; transform: translateY(-12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* SCROLLBAR */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--black); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+  @media (max-width: 640px) {
+    .problem-block { grid-template-columns: 1fr; gap: 20px; }
+    .chapter-progress { grid-template-columns: 1fr; }
+    .chapter-why { padding-left: 28px; }
+    .chapter-num { font-size: 32px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- HERO -->
+  <div class="hero">
+    <div class="stage-badge">STAGE 8 · 개발자리 iOS 로드맵</div>
+    <h1 class="hero-title">
+      <span class="word-engine">UNDERSTANDING</span>
+      <span class="word-driver">THE ENGINE</span>
+    </h1>
+    <p class="hero-tagline">🚗 엔진을 이해하는 드라이버 — <span>"더 깊이 알고 싶다"</span></p>
+    <div class="stage-trail">
+      <div class="trail-item">🛠 S1</div>
+      <div class="trail-item">🐢 S2</div>
+      <div class="trail-item">🍝 S3</div>
+      <div class="trail-item">💀 S4</div>
+      <div class="trail-item">🌐 S5</div>
+      <div class="trail-item">🧊 S6</div>
+      <div class="trail-item">🧪 S7</div>
+      <div class="trail-item current">🔭 S8 ←</div>
+    </div>
+  </div>
+
+  <!-- PROBLEM -->
+  <div class="problem-block">
+    <div class="problem-section pain">
+      <h3>😤 마주치는 문제</h3>
+      <p>왜 이렇게 동작하는지 근본 원리가 궁금합니다 / 시니어로 성장하고 싶습니다</p>
+    </div>
+    <div class="problem-section gain">
+      <h3>🎯 배워서 해결</h3>
+      <p>컴퓨터 구조, OS 원리, 컴파일러, 수학적 기초, 언어 이론</p>
+    </div>
+  </div>
+
+  <!-- OUTCOME -->
+  <div class="outcome-box">
+    <h3>✅ 이 단계를 마친 당신은</h3>
+    <p>CPU, OS, 컴파일러의 원리를 이해합니다. 왜 그렇게 동작하는지 설명할 수 있고, 새로운 기술이 나와도 본질을 꿰뚫습니다. 주니어를 가르칠 수 있고, 기술 의사결정의 근거를 댈 수 있습니다. <strong style="color: var(--cyan)">시니어 개발자</strong>입니다.</p>
+  </div>
+
+  <!-- PROGRESS -->
+  <div class="progress-bar-container">
+    <div class="progress-label">
+      <span>LEARNING PROGRESS</span>
+      <span class="progress-count" id="totalCount">0 / 0</span>
+    </div>
+    <div class="progress-track">
+      <div class="progress-fill" id="totalFill"></div>
+    </div>
+    <div class="chapter-progress">
+      <div class="ch-prog">
+        <div class="ch-prog-label">8-1 · 컴퓨터 구조</div>
+        <div class="ch-prog-bar"><div class="ch-prog-fill ch1-fill" id="ch1Fill"></div></div>
+        <div class="ch-prog-count" id="ch1Count">0 / 0</div>
+      </div>
+      <div class="ch-prog">
+        <div class="ch-prog-label">8-2 · 운영체제</div>
+        <div class="ch-prog-bar"><div class="ch-prog-fill ch2-fill" id="ch2Fill"></div></div>
+        <div class="ch-prog-count" id="ch2Count">0 / 0</div>
+      </div>
+      <div class="ch-prog">
+        <div class="ch-prog-label">8-3 · 컴파일러</div>
+        <div class="ch-prog-bar"><div class="ch-prog-fill ch3-fill" id="ch3Fill"></div></div>
+        <div class="ch-prog-count" id="ch3Count">0 / 0</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CHAPTERS -->
+  <div class="chapters-header">CHAPTERS</div>
+
+  <!-- CHAPTER 8-1 -->
+  <div class="chapter ch1" id="chapter1">
+    <div class="chapter-header" onclick="toggleChapter('chapter1')">
+      <div class="chapter-num">8-1</div>
+      <div class="chapter-meta">
+        <div class="chapter-emoji">💻</div>
+        <div class="chapter-title">컴퓨터는 어떻게 코드를 실행하는가</div>
+        <div class="chapter-subtitle">CPU 바운드 vs I/O 바운드 · M1이 왜 빠른지</div>
+      </div>
+      <div class="chapter-toggle">▾</div>
+    </div>
+    <div class="chapter-why">
+      <span class="chapter-why-label">💡 왜 여기서?</span>
+      7개의 Stage를 거치며 iOS 개발의 전체를 경험했습니다. 이제 "왜 이렇게 동작하는가"라는 근본적인 질문이 생깁니다. CPU가 코드를 어떻게 실행하는지 알면 지금까지 배운 async/await, 메모리, 성능의 모든 것이 다시 보입니다.
+    </div>
+    <div class="chapter-body">
+
+      <div class="topic-group">
+        <div class="topic-group-title">CPU 구조</div>
+        <div class="topics" data-chapter="1">
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">Fetch → Decode → Execute</div>
+                <div class="topic-desc">명령어 실행 사이클의 3단계</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>Fetch: 메모리에서 다음 명령어를 가져옴 (PC 레지스터 사용)</li>
+                <li>Decode: 명령어를 해석해 어떤 연산인지 파악</li>
+                <li>Execute: ALU가 실제 연산 수행 후 결과를 레지스터에 저장</li>
+                <li>이 사이클이 초당 수십억 번 반복됨 = 클럭 속도</li>
+              </ul>
+            </div>
+          </div>
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">ALU, 레지스터, 제어 장치</div>
+                <div class="topic-desc">CPU의 3대 핵심 구성요소</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>ALU (Arithmetic Logic Unit): 덧셈·비교·AND/OR 등 실제 연산 담당</li>
+                <li>레지스터: CPU 내부의 초고속 임시 저장소 (수십 개, 각 64bit)</li>
+                <li>제어 장치: 명령어를 해석하고 다른 유닛에 신호를 보내는 지휘자</li>
+                <li>PC (Program Counter): 다음 실행할 명령어의 주소를 기억</li>
+              </ul>
+            </div>
+          </div>
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">클럭 속도, 파이프라이닝, Branch Prediction</div>
+                <div class="topic-desc">CPU가 빨라지는 세 가지 방법</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>클럭: 1GHz = 초당 10억 사이클. 높을수록 빠르지만 발열 증가</li>
+                <li>파이프라이닝: Fetch/Decode/Execute를 동시에 → 세탁기처럼 병렬 처리</li>
+                <li>Branch Prediction: if문 결과를 미리 예측해 파이프라인 낭비 줄이기</li>
+                <li>예측 실패 시 파이프라인 flush → 성능 패널티 (Spectre 취약점의 원인)</li>
+              </ul>
+            </div>
+          </div>
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">Apple Silicon — Unified Memory의 의미</div>
+                <div class="topic-desc">M1이 왜 그렇게 빠른가</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>기존 PC: CPU ↔ RAM ↔ GPU, 각각 분리된 메모리 → 데이터 복사 비용 발생</li>
+                <li>Unified Memory: CPU·GPU·Neural Engine이 하나의 메모리 풀 공유</li>
+                <li>Metal에서 CPU→GPU 데이터 전송이 제로 카피로 가능</li>
+                <li>SoC (System on Chip): CPU/GPU/메모리/I/O가 한 칩 → 저전력·고속</li>
+              </ul>
+            </div>
+          </div>
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">CPU 바운드 vs I/O 바운드</div>
+                <div class="topic-desc">async/await가 필요한 근본 이유</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>CPU 바운드: 연산이 병목 → 멀티코어 병렬 처리로 해결 (DispatchQueue.concurrent)</li>
+                <li>I/O 바운드: 네트워크/디스크 대기가 병목 → async/await로 스레드 해방</li>
+                <li>async는 I/O 대기 중 스레드를 다른 일에 쓸 수 있게 해줌 (스레드 절약)</li>
+                <li>URLSession이 async인 이유: 네트워크 응답 대기가 전형적인 I/O 바운드</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="topic-group">
+        <div class="topic-group-title">메모리 계층</div>
+        <div class="topics" data-chapter="1">
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">레지스터 < L1 < L2 < RAM < SSD</div>
+                <div class="topic-desc">속도/크기 트레이드오프</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>레지스터: ~0.1ns, 수십 개 (bytes) — CPU 내부</li>
+                <li>L1 캐시: ~1ns, 32-128KB — 코어당 전용</li>
+                <li>L2 캐시: ~5ns, 256KB-1MB</li>
+                <li>RAM: ~100ns, GB 단위</li>
+                <li>SSD: ~100μs, TB 단위 → RAM보다 1000배 느림</li>
+              </ul>
+            </div>
+          </div>
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">캐시 히트 vs 미스</div>
+                <div class="topic-desc">코드 접근 패턴이 성능을 바꾸는 이유</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>캐시 히트: 찾는 데이터가 캐시에 있음 → 1ns 처리</li>
+                <li>캐시 미스: RAM까지 가서 가져와야 함 → 100ns 대기</li>
+                <li>캐시 미스율을 1% 낮추면 전체 성능이 크게 향상될 수 있음</li>
+                <li>iOS Instruments의 Cache Miss 지표가 성능 병목 원인이 되는 이유</li>
+              </ul>
+            </div>
+          </div>
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">공간/시간 지역성</div>
+                <div class="topic-desc">배열이 연결 리스트보다 빠른 이유</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>공간 지역성: 인접한 메모리를 연속 접근 → 한 번에 캐시라인(64byte) 로드</li>
+                <li>Array: 연속 메모리 → 공간 지역성 완벽 → 캐시 친화적</li>
+                <li>LinkedList: 포인터 추적 → 랜덤 접근 → 캐시 미스 폭발</li>
+                <li>시간 지역성: 최근 쓴 데이터를 곧 다시 씀 → 루프 내 변수가 캐시에 유지</li>
+              </ul>
+            </div>
+          </div>
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">iOS Jetsam</div>
+                <div class="topic-desc">메모리 압박 시 앱이 종료되는 메커니즘</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>Jetsam: iOS의 OOM killer, Android의 LMK와 유사</li>
+                <li>메모리 부족 시 우선순위 낮은 앱부터 강제 종료 (SIGKILL)</li>
+                <li>Background 앱이 Suspended → Terminated 순으로 제거됨</li>
+                <li>didReceiveMemoryWarning으로 알림받고 캐시 해제 필요</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="topic-group">
+        <div class="topic-group-title">가상 메모리</div>
+        <div class="topics" data-chapter="1">
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">각 앱이 독립된 공간을 갖는 방법</div>
+                <div class="topic-desc">가상 메모리의 존재 이유</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>모든 프로세스가 같은 물리 메모리를 직접 쓰면 충돌 발생</li>
+                <li>가상 주소 공간: 각 앱은 0~2^64 범위의 독립적인 주소를 씀</li>
+                <li>OS + MMU(Memory Management Unit)가 가상→물리 주소 변환</li>
+                <li>한 앱의 버그가 다른 앱의 메모리를 침범할 수 없음</li>
+              </ul>
+            </div>
+          </div>
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">페이지와 페이지 테이블</div>
+                <div class="topic-desc">가상→물리 주소 변환 메커니즘</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>메모리를 고정 크기(보통 16KB on Apple Silicon) 단위=페이지로 나눔</li>
+                <li>페이지 테이블: 가상 페이지 번호 → 물리 프레임 번호 매핑 테이블</li>
+                <li>TLB (Translation Lookaside Buffer): 페이지 테이블 캐시</li>
+                <li>주소 변환: 가상주소 = 페이지번호 + 오프셋 → 물리주소로 변환</li>
+              </ul>
+            </div>
+          </div>
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">iOS Dirty vs Clean Memory</div>
+                <div class="topic-desc">최적화의 핵심 개념</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>Clean Memory: 파일/실행파일에서 로드, 필요시 다시 로드 가능 → 스왑 가능</li>
+                <li>Dirty Memory: 앱이 직접 수정한 메모리 → 반드시 RAM에 유지</li>
+                <li>iOS는 스왑(Swap) 파티션이 없음 → Dirty Memory 최소화가 중요</li>
+                <li>캐시 이미지를 NSCache로: 메모리 압박 시 자동 해제(Clean으로)</li>
+              </ul>
+            </div>
+          </div>
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">ASLR</div>
+                <div class="topic-desc">주소 랜덤화와 보안 효과</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>ASLR (Address Space Layout Randomization): 실행 때마다 메모리 배치 랜덤화</li>
+                <li>공격자가 "특정 주소에 악성코드 삽입" 전략을 쓸 수 없게 만듦</li>
+                <li>iOS는 ASLR + PIE (Position Independent Executable) 기본 적용</li>
+                <li>ROP (Return Oriented Programming) 공격 방어에도 기여</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- CHAPTER 8-2 -->
+  <div class="chapter ch2" id="chapter2">
+    <div class="chapter-header" onclick="toggleChapter('chapter2')">
+      <div class="chapter-num">8-2</div>
+      <div class="chapter-meta">
+        <div class="chapter-emoji">🏃</div>
+        <div class="chapter-title">운영체제가 하는 일</div>
+        <div class="chapter-subtitle">GCD 설계 원리 · 백그라운드에서 앱이 죽는 이유</div>
+      </div>
+      <div class="chapter-toggle">▾</div>
+    </div>
+    <div class="chapter-why">
+      <span class="chapter-why-label">💡 왜 여기서?</span>
+      CPU 구조를 알면 "그 위에서 OS가 무엇을 관리하는가"로 자연스럽게 연결됩니다. GCD의 QoS, 백그라운드 처리 한계, 스케줄러 — 지금까지 "그냥 그런 것"으로 받아들였던 것들의 근거가 여기서 보입니다.
+    </div>
+    <div class="chapter-body">
+
+      <div class="topic-group">
+        <div class="topic-group-title">프로세스 관리</div>
+        <div class="topics" data-chapter="2">
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">앱 실행부터 종료까지</div>
+                <div class="topic-desc">프로세스 생명주기 전체 흐름</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>fork(): 부모 프로세스를 복제해 새 프로세스 생성</li>
+                <li>exec(): 새 프로세스에 앱 바이너리를 로드</li>
+                <li>iOS에서는 fork/exec 직접 호출 불가, launchd(PID 1)가 관리</li>
+                <li>종료: exit() → OS가 메모리/파일핸들 회수</li>
+              </ul>
+            </div>
+          </div>
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">스케줄링 알고리즘</div>
+                <div class="topic-desc">어떤 프로세스가 CPU를 쓸 것인가</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>Round Robin: 시간 조각(time slice)씩 돌아가며 실행</li>
+                <li>Priority Scheduling: 우선순위 높은 것 먼저 — iOS QoS 기반</li>
+                <li>Multilevel Feedback Queue: 동작 패턴에 따라 큐를 이동</li>
+                <li>Context Switch: 현재 프로세스 상태 저장 → 다음 프로세스 복원 (비용 있음)</li>
+              </ul>
+            </div>
+          </div>
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">iOS QoS — .userInteractive에서 .background까지</div>
+                <div class="topic-desc">GCD 큐의 우선순위가 스케줄러에 미치는 영향</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>.userInteractive: UI 업데이트, 애니메이션 — 최고 우선순위</li>
+                <li>.userInitiated: 사용자 요청 직접 응답 (버튼 탭 결과)</li>
+                <li>.default: 일반적인 작업</li>
+                <li>.utility: 진행 표시 없는 긴 작업 (다운로드)</li>
+                <li>.background: 사용자 모르게 실행, CPU 시간 최소 배분</li>
+              </ul>
+            </div>
+          </div>
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">iOS 앱 상태 전이</div>
+                <div class="topic-desc">Foreground / Background / Suspended</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>Not Running → Active: 홈 화면 탭 → 앱 실행</li>
+                <li>Active → Background: 홈 버튼 → applicationDidEnterBackground()</li>
+                <li>Background → Suspended: 수 초 후 OS가 CPU 할당 중지</li>
+                <li>Suspended → Terminated: 메모리 부족 시 Jetsam이 SIGKILL</li>
+                <li>앱은 Suspended 상태를 직접 감지할 수 없음 (알림 없음)</li>
+              </ul>
+            </div>
+          </div>
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">Background Task</div>
+                <div class="topic-desc">백그라운드 처리 시간 한계와 요청 방법</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>beginBackgroundTask: 최대 ~30초 추가 실행 시간 확보</li>
+                <li>BGTaskScheduler: iOS 13+, 시스템이 적절한 시점에 작업 실행</li>
+                <li>BGProcessingTask: 긴 작업 (분 단위), 충전 중에 주로 실행</li>
+                <li>BGAppRefreshTask: 짧은 업데이트 (30초), 시스템이 빈도 조절</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="topic-group">
+        <div class="topic-group-title">동기화 원리</div>
+        <div class="topics" data-chapter="2">
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">Race Condition, Critical Section, Mutex</div>
+                <div class="topic-desc">동시성 문제의 근본</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>Race Condition: 두 스레드가 동시에 같은 자원 수정 → 결과 예측 불가</li>
+                <li>Critical Section: 동시에 하나의 스레드만 실행해야 하는 코드 구간</li>
+                <li>Mutex (Mutual Exclusion): 락을 걸어 Critical Section 보호</li>
+                <li>Swift: NSLock, os_unfair_lock, @Synchronized 패턴</li>
+              </ul>
+            </div>
+          </div>
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">Semaphore — 동시 접근 개수 제한</div>
+                <div class="topic-desc">Mutex의 일반화 버전</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>Semaphore(n): n개의 스레드가 동시에 접근 허용</li>
+                <li>Semaphore(1) = Mutex (Binary Semaphore)</li>
+                <li>wait(): 카운트 감소, 0이면 블록</li>
+                <li>signal(): 카운트 증가, 대기 중인 스레드 깨움</li>
+                <li>DispatchSemaphore: Swift에서 사용 (async 코드에서는 사용 지양)</li>
+              </ul>
+            </div>
+          </div>
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">Deadlock 발생 조건 4가지와 방지법</div>
+                <div class="topic-desc">교착상태의 근본 원인</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>상호 배제: 자원은 하나의 프로세스만 사용</li>
+                <li>점유 대기: 자원 보유 중 다른 자원 대기</li>
+                <li>비선점: 강제로 자원 빼앗기 불가</li>
+                <li>순환 대기: A→B→C→A 형태의 원형 대기</li>
+                <li>방지: 락 순서 고정, 타임아웃, 락 계층 구조</li>
+              </ul>
+            </div>
+          </div>
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">Actor 모델이 Mutex보다 나은 이유</div>
+                <div class="topic-desc">Swift Concurrency의 설계 철학</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>Mutex: 수동으로 락/언락, 실수하면 Deadlock이나 Race Condition</li>
+                <li>Actor: 메시지 큐로 직렬화, 한 번에 하나의 작업만 실행 보장</li>
+                <li>컴파일러가 Actor isolation 위반을 컴파일 에러로 잡아줌</li>
+                <li>@MainActor: UI 업데이트를 항상 메인 스레드로 보장</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="topic-group">
+        <div class="topic-group-title">파일 시스템</div>
+        <div class="topics" data-chapter="2">
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">APFS</div>
+                <div class="topic-desc">Copy-on-Write, 스냅샷, 암호화</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>CoW (Copy-on-Write): 파일 복사 시 즉시 복사 안 함, 수정 시점에 분기</li>
+                <li>스냅샷: CoW 덕분에 전체 파일시스템 상태를 거의 즉시 백업</li>
+                <li>Clones: 동일 파일 복사본이 공간 차지 없음 (같은 데이터 블록 공유)</li>
+                <li>기본 AES-256 암호화, Secure Enclave과 연동</li>
+              </ul>
+            </div>
+          </div>
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">iOS 샌드박스</div>
+                <div class="topic-desc">Documents / Library / Caches / tmp</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>Documents: 사용자 생성 파일, iCloud 백업 포함, iTunes 공유 가능</li>
+                <li>Library/Application Support: 앱 데이터, iCloud 백업 포함</li>
+                <li>Library/Caches: 재생성 가능한 캐시, 백업 제외, OS가 삭제 가능</li>
+                <li>tmp: 임시 파일, 앱 미실행 시 OS가 청소, 백업 제외</li>
+              </ul>
+            </div>
+          </div>
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">iCloud 백업 포함/제외 설정</div>
+                <div class="topic-desc">사용자 저장 공간 절약과 심사 요구사항</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>isExcludedFromBackup: 재다운로드 가능한 파일은 백업 제외 필수</li>
+                <li>App Store 심사: 불필요한 파일을 Documents에 저장하면 리젝 사유</li>
+                <li>NSURLIsExcludedFromBackupKey로 개별 파일 설정</li>
+                <li>CoreData/Realm DB 파일 위치와 백업 정책을 명시적으로 설정</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- CHAPTER 8-3 -->
+  <div class="chapter ch3" id="chapter3">
+    <div class="chapter-header" onclick="toggleChapter('chapter3')">
+      <div class="chapter-num">8-3</div>
+      <div class="chapter-meta">
+        <div class="chapter-emoji">🔧</div>
+        <div class="chapter-title">컴파일러와 언어 내부</div>
+        <div class="chapter-subtitle">Swift Macros 원리 · 빌드가 왜 느린지</div>
+      </div>
+      <div class="chapter-toggle">▾</div>
+    </div>
+    <div class="chapter-why">
+      <span class="chapter-why-label">💡 왜 여기서?</span>
+      OS를 알면 "내 Swift 코드가 어떻게 기계어가 되는가"가 궁금해집니다. 컴파일러를 이해하면 타입 시스템, Macros, 빌드 최적화의 모든 설계 결정이 납득됩니다. 언어를 쓰는 사람에서 언어를 이해하는 사람으로 넘어가는 단계입니다.
+    </div>
+    <div class="chapter-body">
+
+      <div class="topic-group">
+        <div class="topic-group-title">Swift 컴파일 과정</div>
+        <div class="topics" data-chapter="3">
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">소스코드 → 바이너리까지</div>
+                <div class="topic-desc">Lexing → Parsing → AST → Semantic Analysis</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>Lexing: 소스 텍스트 → 토큰 스트림 (let, x, =, 5 등)</li>
+                <li>Parsing: 토큰 → AST (Abstract Syntax Tree, 추상 구문 트리)</li>
+                <li>Semantic Analysis: 타입 체크, 이름 해석, 문법 오류 검출</li>
+                <li>SIL 생성 → LLVM IR → 기계어 (아키텍처별 최적화)</li>
+              </ul>
+            </div>
+          </div>
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">SIL — Swift Intermediate Language</div>
+                <div class="topic-desc">Swift만의 최적화 단계</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>SIL: Swift 고유의 중간 언어, LLVM IR로 가기 전 단계</li>
+                <li>ARC (Automatic Reference Counting) 최적화 여기서 수행</li>
+                <li>불필요한 retain/release 쌍 제거, 함수 인라이닝</li>
+                <li>swiftc -emit-sil로 SIL 출력 확인 가능</li>
+              </ul>
+            </div>
+          </div>
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">LLVM → 기계어 생성</div>
+                <div class="topic-desc">플랫폼 독립적 최적화의 마지막 단계</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>LLVM IR: 플랫폼 독립적인 중간 표현 (C/Rust/Swift 모두 사용)</li>
+                <li>LLVM 최적화: 루프 벡터화, 데드코드 제거, 상수 폴딩</li>
+                <li>코드 생성: ARM64 (iOS) 또는 x86_64 (Simulator) 기계어</li>
+                <li>Link: 여러 .o 파일 + 프레임워크를 하나의 실행 바이너리로</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="topic-group">
+        <div class="topic-group-title">Swift Macros</div>
+        <div class="topics" data-chapter="3">
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">Macro = AST를 받아 AST를 반환하는 함수</div>
+                <div class="topic-desc">컴파일 타임 코드 생성의 원리</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>Macro는 컴파일 타임에 실행, 런타임 오버헤드 없음</li>
+                <li>입력: SwiftSyntax의 SyntaxNode (AST 노드)</li>
+                <li>출력: 새로운 AST 노드 (생성된 코드)</li>
+                <li>C 매크로와 달리 타입 안전, 문맥 인식, 디버깅 가능</li>
+              </ul>
+            </div>
+          </div>
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">@Observable 내부에서 생성되는 코드</div>
+                <div class="topic-desc">Macro 확장 결과 직접 확인하기</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>Xcode: 소스 에디터 → 우클릭 → "Expand Macro"로 확인</li>
+                <li>@Observable은 각 stored property에 _$observe 래퍼 생성</li>
+                <li>willSet/didSet 대신 _$observationRegistrar.access/withMutation 삽입</li>
+                <li>Observation framework의 ObservationRegistrar를 내부적으로 사용</li>
+              </ul>
+            </div>
+          </div>
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">SwiftSyntax로 직접 Macro 만들기</div>
+                <div class="topic-desc">나만의 컴파일 타임 코드 생성</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>swift-syntax 패키지: AST 파싱/생성 라이브러리</li>
+                <li>MemberMacro: 타입에 멤버 추가 (@Observable 방식)</li>
+                <li>ExpressionMacro: 표현식 변환 (#stringify 방식)</li>
+                <li>테스트: MacroTesting 패키지로 입출력 문자열 비교</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="topic-group">
+        <div class="topic-group-title">빌드 최적화</div>
+        <div class="topics" data-chapter="3">
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">타입 추론 비용</div>
+                <div class="topic-desc">복잡한 표현식이 느린 이유</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>Swift 타입 추론은 제약 해결(Constraint Solving) 기반</li>
+                <li>체이닝 (a.b().c().d()): 각 단계 타입 추론이 누적</li>
+                <li>복잡한 배열 리터럴: 요소 타입 추론이 지수적으로 증가 가능</li>
+                <li>해결: 중간 타입 명시 (let x: String = ...) → 추론 범위 제한</li>
+              </ul>
+            </div>
+          </div>
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">Build Timing Summary</div>
+                <div class="topic-desc">느린 함수 찾기</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>Other Swift Flags에 추가: -Xfrontend -warn-long-function-bodies=100</li>
+                <li>100ms 이상 걸리는 함수에 경고 표시</li>
+                <li>Product → Perform Action → Build With Timing Summary</li>
+                <li>Report Navigator에서 어떤 파일이 오래 걸리는지 확인</li>
+              </ul>
+            </div>
+          </div>
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">Explicit Return Type, Module Caching</div>
+                <div class="topic-desc">빌드 시간 절반으로 줄이기</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>명시적 리턴 타입: 함수마다 -> ReturnType 기재 → 추론 생략</li>
+                <li>모듈화: 변경 없는 코드를 별도 모듈로 → 증분 빌드 효과 극대화</li>
+                <li>Whole Module Optimization: Release 빌드 최적화 (빌드는 느림, 실행은 빠름)</li>
+                <li>Derived Data 정리: 가끔 캐시 오염 → cmd+shift+k로 클린 빌드</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="topic-group">
+        <div class="topic-group-title">언어 이론</div>
+        <div class="topics" data-chapter="3">
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">타입 시스템 — 정적 vs 동적, 타입 추론의 원리</div>
+                <div class="topic-desc">Swift가 왜 이렇게 설계됐는가</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>정적 타입: 컴파일 시 타입 결정 → 런타임 오류 감소, 최적화 유리</li>
+                <li>동적 타입: 런타임 타입 결정 → 유연성 높음 (Python, JS)</li>
+                <li>Hindley-Milner: Swift 타입 추론의 기반 알고리즘</li>
+                <li>Structural vs Nominal: Swift는 Nominal (이름 기반), 프로토콜로 유연성 확보</li>
+              </ul>
+            </div>
+          </div>
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">Optional이 왜 모나드인가</div>
+                <div class="topic-desc">함수형 패러다임 관점의 Optional</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>모나드: 값을 컨텍스트로 감싸고 체이닝 가능한 구조</li>
+                <li>Optional.map: Some(x)에 함수 적용, None이면 None 유지</li>
+                <li>Optional.flatMap: nil 전파 자동화 → 체이닝 안전하게</li>
+                <li>if let / guard let = 모나드에서 값 꺼내기 (바인딩)</li>
+              </ul>
+            </div>
+          </div>
+          <div class="topic-card" onclick="toggleTopic(this)">
+            <div class="topic-row">
+              <div class="topic-check" onclick="toggleDone(event, this)"></div>
+              <div class="topic-content">
+                <div class="topic-name">Swift vs Kotlin vs Rust — 같은 문제를 다르게 푸는 방법</div>
+                <div class="topic-desc">언어 설계 철학 비교</div>
+              </div>
+            </div>
+            <div class="topic-detail">
+              <ul>
+                <li>Null 안전: Swift Optional vs Kotlin ?, !! vs Rust Option&lt;T&gt;</li>
+                <li>동시성: Swift Actor vs Kotlin Coroutine vs Rust Ownership+Send</li>
+                <li>메모리: Swift ARC vs Kotlin GC vs Rust Borrow Checker</li>
+                <li>Rust: 컴파일 타임 메모리 안전 → 런타임 GC 없음, 임베디드 가능</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <div class="page-footer" style="margin-top: 56px;">
+    개발자리 iOS 로드맵 · STAGE <span>8</span> / 8 · <span>시니어 레벨</span>
+  </div>
+
+</div>
+
+<script>
+  // Chapter toggle
+  function toggleChapter(id) {
+    const chapter = document.getElementById(id);
+    chapter.classList.toggle('active');
+  }
+
+  // Topic expand
+  function toggleTopic(card) {
+    if (event.target.classList.contains('topic-check')) return;
+    card.classList.toggle('expanded');
+  }
+
+  // Mark done
+  function toggleDone(e, checkEl) {
+    e.stopPropagation();
+    const card = checkEl.closest('.topic-card');
+    card.classList.toggle('done');
+    const isDone = card.classList.contains('done');
+    checkEl.textContent = isDone ? '✓' : '';
+    updateProgress();
+  }
+
+  // Progress
+  function updateProgress() {
+    const chapters = [1, 2, 3];
+    let totalDone = 0, totalAll = 0;
+
+    chapters.forEach(ch => {
+      const cards = document.querySelectorAll(`.topics[data-chapter="${ch}"] .topic-card`);
+      const done = document.querySelectorAll(`.topics[data-chapter="${ch}"] .topic-card.done`).length;
+      const all = cards.length;
+
+      totalDone += done;
+      totalAll += all;
+
+      const pct = all > 0 ? (done / all * 100) : 0;
+      document.getElementById(`ch${ch}Fill`).style.width = pct + '%';
+      document.getElementById(`ch${ch}Count`).textContent = `${done} / ${all}`;
+    });
+
+    const totalPct = totalAll > 0 ? (totalDone / totalAll * 100) : 0;
+    document.getElementById('totalFill').style.width = totalPct + '%';
+    document.getElementById('totalCount').textContent = `${totalDone} / ${totalAll}`;
+  }
+
+  // Init
+  updateProgress();
+
+  // Open first chapter by default
+  setTimeout(() => {
+    document.getElementById('chapter1').classList.add('active');
+  }, 700);
+</script>
+</body>
+</html>
